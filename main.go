@@ -48,6 +48,8 @@ var command string
 var logfile string
 var bQuiet bool
 var bVerbose bool
+var bDryrun bool
+var bDeletelogFirst bool
 
 
 var Usage = func() {
@@ -90,49 +92,51 @@ func readLoop() {
 								
 			}
 
-			if bVerbose { fmt.Println("cmd = " + cmd) }
+			if bVerbose || bDryrun { fmt.Println("cmd = " + cmd) }
 			
-			cmdArray := strings.Split(cmd, " ")
-			
-			params := make([]interface{}, 0)
-			cmd0 := ""
-			for index,element := range cmdArray {
-				if (index == 0) { 
-					cmd0 = element 
-				} else
-				{ 
-					params = append(params, element) 
-				}
-			} 
-	
-
-			
-			if logfile == "" {
-				sh.Command(cmd0, params...).Run()
-			} else
-			{
-				file, err := os.OpenFile(logfile, os.O_RDWR|os.O_APPEND, 0666)
-				if err != nil {
-					file, err = os.Create(logfile)
-					if (err != nil) {
-						fmt.Println("Can't write to " + logfile)
-						os.Exit(1)
+			if (!bDryrun) {
+				cmdArray := strings.Split(cmd, " ")
+				
+				params := make([]interface{}, 0)
+				cmd0 := ""
+				for index,element := range cmdArray {
+					if (index == 0) { 
+						cmd0 = element 
+					} else
+					{ 
+						params = append(params, element) 
 					}
+				} 
+		
+	
+				
+				if logfile == "" {
+					sh.Command(cmd0, params...).Run()
+				} else
+				{
+					file, err := os.OpenFile(logfile, os.O_RDWR|os.O_APPEND, 0666)
+					if err != nil {
+						file, err = os.Create(logfile)
+						if (err != nil) {
+							fmt.Println("Can't write to " + logfile)
+							os.Exit(1)
+						}
+					}
+					defer file.Close()
+					w := bufio.NewWriter(file)
+					
+					c1 := sh.Command(cmd0, params...)
+					c1.Stdout = w
+					c1.Start()
+					c1.Wait()
+					wc, ok := c1.Stdout.(io.WriteCloser)
+					if ok {
+						wc.Close()
+					}
+					
+					
+					w.Flush()
 				}
-				defer file.Close()
-				w := bufio.NewWriter(file)
-				
-				c1 := sh.Command(cmd0, params...)
-				c1.Stdout = w
-				c1.Start()
-				c1.Wait()
-				wc, ok := c1.Stdout.(io.WriteCloser)
-				if ok {
-					wc.Close()
-				}
-				
-				
-				w.Flush()
 			}
 
 		}
@@ -155,12 +159,20 @@ func main() {
 	flag.StringVar(&logfile, "l", "", "logfile")
 	flag.BoolVar(&bQuiet, "q", false, "Quiet. Used in scripts")
 	flag.BoolVar(&bVerbose, "v", false, "Verbose. Used when testing regular expression")
+	flag.BoolVar(&bDryrun, "n", false, "Dry run. Show but not execute command")
+	flag.BoolVar(&bDeletelogFirst, "d", false, "Delete logfile before execution")
+
 	flag.Usage = Usage
 	flag.Parse()	
 	
 	
-
-	
+	if bDeletelogFirst {
+		if logfile == "" {
+			fmt.Println("Delete log require log file")
+			os.Exit(1)
+		}
+		os.Remove(logfile)
+	}
 	
 	readLoop()
 
